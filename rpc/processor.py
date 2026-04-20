@@ -87,7 +87,7 @@ class RPC:  # pylint: disable=R0903,E1101
             global_user_roles = auth_core.get_user_roles(user_id)
             log.info("User roles: %s", global_user_roles)
             #
-            if global_admin_role not in global_user_roles:
+            if not global_user_roles:
                 auth_core.assign_user_to_role(user_id, global_admin_role)
                 log.info("Added role for %s: %s", user_id, global_admin_role)
         #
