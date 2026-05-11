@@ -54,7 +54,7 @@ class Module(module.ModuleModel):
                 auth_core.add_group_permission(1, 1, root_permission)
         # Ensure system user present
         system_user = "system@centry.user"
-        global_admin_role = "admin"
+        global_admin_role = "super_admin"
         #
         try:
             system_user_id = auth_core.get_user(email=system_user)["id"]

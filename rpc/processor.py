@@ -80,7 +80,7 @@ class RPC:  # pylint: disable=R0903,E1101
         if not returning_name:
             auth_core.update_user(id_=user_id, name=user_name)
         #
-        global_admin_role = "admin"
+        global_admin_role = "super_admin"
         initial_global_admins = self.descriptor.config.get("initial_global_admins", [])
         #
         if user_provider_id in initial_global_admins:
