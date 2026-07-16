@@ -36,6 +36,13 @@ class RPC:  # pylint: disable=R0903,E1101
         # Ensure user is present
         attributes = auth_ctx["provider_attr"].get("attributes", {})
         #
+        remap_attributes = self.descriptor.config.get("remap_attributes", {})
+        if isinstance(remap_attributes, dict):
+            for key, value in remap_attributes.items():
+                if key not in attributes and value in attributes:
+                    log.info("Remapping attribute %s to %s", value, key)
+                    attributes[key] = attributes[value]
+        #
         user_email = attributes.get("email") or f"{user_provider_id}@centry.user"
         user_email = user_email.lower()
         #
