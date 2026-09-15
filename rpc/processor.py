@@ -76,6 +76,16 @@ class RPC:  # pylint: disable=R0903,E1101
         #
         user_id = auth_ctx["user_id"]
         #
+        # Heal a user whose system token was removed outside the platform.
+        # access_success_redirect denies the login if any processor raises, so
+        # this must never be able to lock a user out.
+        try:
+            auth_core.ensure_system_token(user_id)
+        except:  # pylint: disable=W0702
+            log.warning(
+                "Could not ensure system token for user %s", user_id, exc_info=True,
+            )
+        #
         self.context.event_manager.fire_event("new_ai_user", {
             "user_id": user_id,
             "user_email": user_email,
