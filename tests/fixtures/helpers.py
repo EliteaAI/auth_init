@@ -20,15 +20,17 @@ class Log:
     def __init__(self):
         self.warnings = []
         self.exceptions = []
+        self.infos = []
+        self.errors = []
 
     def info(self, message, *args, **kwargs):
-        pass
+        self.infos.append(message % args if args else message)
 
     def debug(self, message, *args, **kwargs):
         pass
 
     def error(self, message, *args, **kwargs):
-        pass
+        self.errors.append(message % args if args else message)
 
     def critical(self, message, *args, **kwargs):
         pass

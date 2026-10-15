@@ -27,6 +27,107 @@ from plugins.auth_core.tools import rpc_tools  # pylint: disable=E0401
 from tools import auth_core  # pylint: disable=E0401
 
 
+IDENTITY_KEYS = ("email", "idp_subject")
+
+SUBJECT_FIELDS = ("idp_issuer", "idp_tid", "idp_oid")
+
+
+def _identity_subject(auth_ctx):
+    """ (issuer, tid, oid) the provider vouched for; None if it supplied no identity
+
+    A tuple with a None/empty part means the provider supplies an identity but not
+    a complete one (for example a personal account without tid/oid).
+    """
+    identity = auth_ctx["provider_attr"].get("identity")
+    if not isinstance(identity, dict):
+        return None
+    #
+    parts = tuple(identity.get(key) or None for key in ("issuer", "tid", "oid"))
+    return tuple(part if isinstance(part, str) else None for part in parts)
+
+
+def _user_subject(user):
+    """ (issuer, tid, oid) stored on a user row; (None, None, None) for none """
+    return tuple((user.get(field) or None) for field in SUBJECT_FIELDS)
+
+
+def _record_idp_subject(user_id, subject):
+    """ email mode: add the provider's subject to a user that has none (best effort)
+
+    The login is matched by e-mail in this mode, so recording the subject must not
+    be able to fail it: a missing RPC on an older auth_core, a subject another user
+    already carries - all are logged and skipped.
+    """
+    try:
+        current = _user_subject(auth_core.get_user(user_id=user_id))
+        if current == (None, None, None):
+            auth_core.set_user_idp_subject(user_id, *subject)
+            log.info("Recorded IdP subject on user %s: tid=%s oid=%s", user_id, subject[1], subject[2])
+        elif current != subject:
+            log.warning(
+                "User %s matched by e-mail carries a different IdP subject "
+                "(tid=%s oid=%s) than this login (tid=%s oid=%s)",
+                user_id, current[1], current[2], subject[1], subject[2],
+            )
+    except:  # pylint: disable=W0702
+        log.warning("Could not record IdP subject for user %s", user_id, exc_info=True)
+
+
+def _resolve_by_idp_subject(auth_ctx, subject, user_email, user_name, user_provider_id):
+    """ idp_subject mode: set auth_ctx["user_id"] by (issuer, tid, oid), or raise
+
+    The subject is the key. An e-mail (or provider reference) match is only a
+    first-time link to a user that carries no subject yet; a user with another
+    subject is never merged.
+    """
+    if None in subject:
+        log.error("Login denied: identity_key is idp_subject but the provider did not supply issuer, tid and oid")
+        raise RuntimeError("Login denied: no complete IdP subject")
+    #
+    issuer, tid, oid = subject
+    #
+    found = auth_core.get_user_by_idp_subject(issuer, tid, oid)
+    if found is not None:
+        if auth_ctx["user_id"] not in (None, found["id"]):
+            log.warning(
+                "Provider reference points to user %s but IdP subject (tid=%s oid=%s) "
+                "belongs to user %s: using the IdP subject",
+                auth_ctx["user_id"], tid, oid, found["id"],
+            )
+        auth_ctx["user_id"] = found["id"]
+        return
+    #
+    candidate = None
+    if auth_ctx["user_id"] is not None:
+        candidate = auth_core.get_user(user_id=auth_ctx["user_id"])
+    else:
+        try:
+            candidate = auth_core.get_user(email=user_email)
+        except:  # pylint: disable=W0702
+            log.info("No users with same email, creating new one")
+    #
+    if candidate is not None:
+        if _user_subject(candidate) != (None, None, None):
+            log.error(
+                "Login denied: user %s has a different IdP subject than this login "
+                "(tid=%s oid=%s); not merging", candidate["id"], tid, oid,
+            )
+            raise RuntimeError("Login denied: user is linked to a different IdP subject")
+        user_id = candidate["id"]
+        auth_core.set_user_idp_subject(user_id, issuer, tid, oid)
+        log.info("Linked user %s to IdP subject: tid=%s oid=%s", user_id, tid, oid)
+        if auth_ctx["user_id"] is None:
+            auth_core.add_user_provider(user_id, user_provider_id)
+    else:
+        user_id = auth_core.add_user(user_email, user_name)
+        auth_core.add_user_provider(user_id, user_provider_id)
+        auth_core.add_user_group(user_id, 1)
+        auth_core.set_user_idp_subject(user_id, issuer, tid, oid)
+        log.info("Created user: %s", user_id)
+    #
+    auth_ctx["user_id"] = user_id
+
+
 class RPC:  # pylint: disable=R0903,E1101
 
     @web.rpc("auth_init_auth_processor")
@@ -53,7 +154,16 @@ class RPC:  # pylint: disable=R0903,E1101
         else:
             user_name = user_email
         #
-        if auth_ctx["user_id"] is None:
+        identity_key = self.descriptor.config.get("identity_key", "email")
+        if identity_key not in IDENTITY_KEYS:
+            log.error("Unknown identity_key %r, expected one of %s", identity_key, IDENTITY_KEYS)
+            raise RuntimeError("Login denied: invalid identity_key")
+        #
+        subject = _identity_subject(auth_ctx)
+        #
+        if identity_key == "idp_subject" and subject is not None:
+            _resolve_by_idp_subject(auth_ctx, subject, user_email, user_name, user_provider_id)
+        elif auth_ctx["user_id"] is None:
             user_id = None
             #
             try:
@@ -75,6 +185,9 @@ class RPC:  # pylint: disable=R0903,E1101
                 log.info("Created user: %s", user_id)
         #
         user_id = auth_ctx["user_id"]
+        #
+        if identity_key == "email" and subject is not None and None not in subject:
+            _record_idp_subject(user_id, subject)
         #
         # Heal a user whose system token was removed outside the platform.
         # access_success_redirect denies the login if any processor raises, so
