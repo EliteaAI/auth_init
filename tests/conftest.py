@@ -31,6 +31,8 @@ def pylon_log():
     """The stub Pylon log, cleared per test."""
     PYLON_LOG.warnings.clear()
     PYLON_LOG.exceptions.clear()
+    PYLON_LOG.infos.clear()
+    PYLON_LOG.errors.clear()
     return PYLON_LOG
 
 

@@ -1,2 +1,13 @@
 # initial_global_admins:
 # - admin
+
+# How a login is matched to a user:
+#   email        - by e-mail address (default). When the provider supplies an IdP
+#                  subject (issuer, tid, oid), it is also recorded on the matched
+#                  user if that user has none yet.
+#   idp_subject  - by (issuer, tid, oid). An e-mail match is only a first-time link
+#                  to a user that has no subject yet; a user with a different
+#                  subject is never merged and the login is denied. Logins whose
+#                  provider supplies an incomplete subject are denied; providers
+#                  that supply no identity at all (not OIDC) still match by e-mail.
+# identity_key: email
