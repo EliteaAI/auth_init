@@ -41,8 +41,9 @@ class AuthCore:
     auth_core - one without ensure_system_token - is expressed.
     """
 
-    def __init__(self, user_id=1, errors=None):
+    def __init__(self, user_id=1, email="user@example.com", errors=None):
         self.user_id = user_id
+        self.email = email
         self.errors = errors or {}
         self.calls = []
 
@@ -57,6 +58,10 @@ class AuthCore:
 
     def get_user(self, email=None, **kwargs):
         self._record("get_user", email=email, **kwargs)
+        return {"id": self.user_id, "email": self.email}
+
+    def get_user_from_provider(self, provider_id):
+        self._record("get_user_from_provider", provider_id)
         return {"id": self.user_id}
 
     def add_user(self, email, name=None):
