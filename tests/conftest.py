@@ -83,6 +83,14 @@ class AuthCore:
         self._record("get_user_roles", user_id)
         return ["viewer"]
 
+    def get_user_from_provider(self, provider_ref):
+        """The user a provider reference maps to; ``provider_user_id=None`` means no mapping."""
+        self._record("get_user_from_provider", provider_ref)
+        provider_user_id = getattr(self, "provider_user_id", self.user_id)
+        if provider_user_id is None:
+            raise LookupError(provider_ref)
+        return {"id": provider_user_id}
+
     def assign_user_to_role(self, user_id, role):
         self._record("assign_user_to_role", user_id, role)
 

@@ -27,6 +27,7 @@ class Directory:
         self.users = {}
         self.calls = []
         self.next_id = 100
+        self.provider_refs = {}   # provider reference -> user id, what get_user_from_provider answers
 
     def seed(self, user_id, email, subject=(None, None, None)):
         self.users[user_id] = {
@@ -77,6 +78,13 @@ class Directory:
 
     def add_user_provider(self, user_id, provider_id):
         self.calls.append(("add_user_provider", user_id, provider_id))
+        self.provider_refs[provider_id] = user_id
+
+    def get_user_from_provider(self, provider_ref):
+        self.calls.append(("get_user_from_provider", provider_ref))
+        if provider_ref not in self.provider_refs:
+            raise RuntimeError("No such provider reference")
+        return dict(self.users[self.provider_refs[provider_ref]])
 
     def add_user_group(self, user_id, group_id):
         self.calls.append(("add_user_group", user_id, group_id))
@@ -109,6 +117,8 @@ def login(processor, directory, events, subject):
     def run(identity_key=None, identity=(ISSUER, TID, OID), user_id=None, with_identity=True):
         if identity_key is not None:
             subject.descriptor.config["identity_key"] = identity_key
+        if user_id is not None:
+            directory.provider_refs[NAMEID] = user_id   # "provider-known user": the reference maps to them
         provider_attr = {
             "nameid": NAMEID,
             "attributes": {"email": EMAIL.upper(), "name": "A User"},

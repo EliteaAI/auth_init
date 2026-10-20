@@ -73,6 +73,14 @@ def _record_idp_subject(user_id, subject):
         log.warning("Could not record IdP subject for user %s", user_id, exc_info=True)
 
 
+def _belongs_to_provider(user_id, user_provider_id) -> bool:
+    """True when ``user_provider_id`` is a provider reference of ``user_id``."""
+    try:
+        return auth_core.get_user_from_provider(user_provider_id)["id"] == user_id
+    except Exception:  # pylint: disable=W0703  # no mapping for this reference
+        return False
+
+
 def _resolve_by_idp_subject(auth_ctx, subject, user_email, user_name, user_provider_id):
     """ idp_subject mode: set auth_ctx["user_id"] by (issuer, tid, oid), or raise
 
@@ -134,6 +142,13 @@ class RPC:  # pylint: disable=R0903,E1101
     @rpc_tools.wrap_exceptions(RuntimeError)
     def init_auth_processor(self, auth_ctx):
         user_provider_id = auth_ctx["provider_attr"]["nameid"]
+        # A login may only name the user its own provider reference maps to. The provider
+        # hands over a fresh context, so a pre-set user id that this reference does not map
+        # to is a stale or foreign session: deny instead of attaching the identity to it.
+        if auth_ctx.get("user_id") is not None and not _belongs_to_provider(auth_ctx["user_id"], user_provider_id):
+            log.error("Login denied: session user %s is not the user of provider identity %r",
+                      auth_ctx["user_id"], user_provider_id)
+            raise RuntimeError("Login denied: identity mismatch")
         # Ensure user is present
         attributes = auth_ctx["provider_attr"].get("attributes", {})
         #
@@ -213,7 +228,8 @@ class RPC:  # pylint: disable=R0903,E1101
         global_admin_role = "super_admin"
         initial_global_admins = self.descriptor.config.get("initial_global_admins", [])
         #
-        if user_provider_id in initial_global_admins:
+        # Only the user this provider reference maps to may receive the initial admin role
+        if user_provider_id in initial_global_admins and _belongs_to_provider(user_id, user_provider_id):
             global_user_roles = auth_core.get_user_roles(user_id)
             log.info("User roles: %s", global_user_roles)
             #
