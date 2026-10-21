@@ -136,6 +136,43 @@ def _resolve_by_idp_subject(auth_ctx, subject, user_email, user_name, user_provi
     auth_ctx["user_id"] = user_id
 
 
+# Module-level on purpose: Pylon binds only @web.rpc/@web.method-decorated functions
+# onto the Module, so a helper reached as ``self._helper(...)`` is missing at runtime.
+def _ensure_user_provider(user_id, provider_ref):
+    try:
+        owner_id = auth_core.get_user_from_provider(provider_ref)["id"]
+    except:  # pylint: disable=W0702
+        auth_core.add_user_provider(user_id, provider_ref)
+        return
+    #
+    if owner_id != user_id:
+        log.warning(
+            "Provider ref %s belongs to user %s, not %s: merge needed",
+            provider_ref, owner_id, user_id,
+        )
+
+
+def _sync_user_email(user_id, user_email):
+    stored_email = auth_core.get_user(user_id=user_id)["email"]
+    if stored_email == user_email:
+        return
+    #
+    try:
+        owner_id = auth_core.get_user(email=user_email)["id"]
+    except:  # pylint: disable=W0702
+        owner_id = None
+    #
+    if owner_id is not None:
+        log.warning(
+            "Email of user %s changed %s -> %s, but it is taken by user %s: merge needed",
+            user_id, stored_email, user_email, owner_id,
+        )
+        return
+    #
+    auth_core.update_user(id_=user_id, email=user_email)
+    log.info("Email of user %s changed: %s -> %s", user_id, stored_email, user_email)
+
+
 class RPC:  # pylint: disable=R0903,E1101
 
     @web.rpc("auth_init_auth_processor")
@@ -208,10 +245,10 @@ class RPC:  # pylint: disable=R0903,E1101
         try:
             for provider_ref in (auth_ctx["provider_attr"].get("stable_ref"), user_provider_id):
                 if provider_ref:
-                    self._ensure_user_provider(user_id, provider_ref)
+                    _ensure_user_provider(user_id, provider_ref)
             #
             if attributes.get("email"):
-                self._sync_user_email(user_id, user_email)
+                _sync_user_email(user_id, user_email)
         except:  # pylint: disable=W0702
             log.warning("Could not sync identity for user %s", user_id, exc_info=True)
         #
@@ -249,38 +286,3 @@ class RPC:  # pylint: disable=R0903,E1101
                 log.info("Added role for %s: %s", user_id, global_admin_role)
         #
         return auth_ctx
-
-    @staticmethod
-    def _ensure_user_provider(user_id, provider_ref):
-        try:
-            owner_id = auth_core.get_user_from_provider(provider_ref)["id"]
-        except:  # pylint: disable=W0702
-            auth_core.add_user_provider(user_id, provider_ref)
-            return
-        #
-        if owner_id != user_id:
-            log.warning(
-                "Provider ref %s belongs to user %s, not %s: merge needed",
-                provider_ref, owner_id, user_id,
-            )
-
-    @staticmethod
-    def _sync_user_email(user_id, user_email):
-        stored_email = auth_core.get_user(user_id=user_id)["email"]
-        if stored_email == user_email:
-            return
-        #
-        try:
-            owner_id = auth_core.get_user(email=user_email)["id"]
-        except:  # pylint: disable=W0702
-            owner_id = None
-        #
-        if owner_id is not None:
-            log.warning(
-                "Email of user %s changed %s -> %s, but it is taken by user %s: merge needed",
-                user_id, stored_email, user_email, owner_id,
-            )
-            return
-        #
-        auth_core.update_user(id_=user_id, email=user_email)
-        log.info("Email of user %s changed: %s -> %s", user_id, stored_email, user_email)
