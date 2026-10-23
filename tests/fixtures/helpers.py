@@ -20,15 +20,17 @@ class Log:
     def __init__(self):
         self.warnings = []
         self.exceptions = []
+        self.infos = []
+        self.errors = []
 
     def info(self, message, *args, **kwargs):
-        pass
+        self.infos.append(message % args if args else message)
 
     def debug(self, message, *args, **kwargs):
         pass
 
     def error(self, message, *args, **kwargs):
-        pass
+        self.errors.append(message % args if args else message)
 
     def critical(self, message, *args, **kwargs):
         pass
@@ -49,7 +51,14 @@ def install_pylon_stubs() -> Log:
     pylon_core_tools = types.ModuleType("pylon.core.tools")
 
     pylon_core_tools.log = log
-    pylon_core_tools.web = types.SimpleNamespace(rpc=lambda *a, **k: lambda f: f)
+    def _bindable(*_args, **_kwargs):
+        """Like Pylon's web.rpc/web.method: tag the function as one Pylon binds onto the Module."""
+        def decorator(func):
+            func.__pylon_bound__ = True
+            return func
+        return decorator
+
+    pylon_core_tools.web = types.SimpleNamespace(rpc=_bindable, method=_bindable)
     pylon_core_tools.module = types.SimpleNamespace()
 
     pylon.core = pylon_core
@@ -104,3 +113,16 @@ def import_plugin_module(plugin_root: pathlib.Path, dotted: str) -> Any:
     register_plugin_package(plugin_root)
 
     return importlib.import_module(f"{PACKAGE_NAME}.{dotted}")
+
+
+def bind_like_pylon(cls, **attrs) -> Any:
+    """A Module-like object: only the web.rpc/web.method-decorated functions of ``cls`` are bound.
+
+    Pylon copies exactly those onto the Module, so anything else the class defines
+    (plain or static helpers) is absent at runtime - unlike a direct ``cls()``.
+    """
+    module = types.SimpleNamespace(**attrs)
+    for name, func in vars(cls).items():
+        if getattr(func, "__pylon_bound__", False):
+            setattr(module, name, types.MethodType(func, module))
+    return module
