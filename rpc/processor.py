@@ -205,6 +205,8 @@ class RPC:  # pylint: disable=R0903,E1101
             user_name = attributes.get("name")
         else:
             user_name = user_email
+        # Only a name the IdP actually sent may replace the stored one
+        idp_name_given = user_name != user_email
         #
         identity_key = self.descriptor.config.get("identity_key", "email")
         if identity_key not in IDENTITY_KEYS:
@@ -270,8 +272,10 @@ class RPC:  # pylint: disable=R0903,E1101
         # Ensure global_admin is set
         #
         _, returning_name = auth_core.update_user(id_=user_id, last_login=datetime.now())
-        if not returning_name:
+        if not returning_name or (idp_name_given and returning_name != user_name):
             auth_core.update_user(id_=user_id, name=user_name)
+            if returning_name:
+                log.info("Name of user %s changed: %s -> %s", user_id, returning_name, user_name)
         #
         global_admin_role = "super_admin"
         initial_global_admins = self.descriptor.config.get("initial_global_admins", [])
