@@ -49,7 +49,7 @@ class AuthCore:
         self.errors = errors or {}
         self.calls = []
 
-    def _record(self, name, *args, **kwargs):
+    def _record(self, name, /, *args, **kwargs):
         self.calls.append((name, args, kwargs))
         error = self.errors.get(name)
         if error is not None:
