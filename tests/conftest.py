@@ -80,6 +80,10 @@ class AuthCore:
         self._record("ensure_system_token", user_id)
         return "encoded-token"
 
+    def record_first_login(self, user_id, when):
+        self._record("record_first_login", user_id, when)
+        return True
+
     def update_user(self, id_=None, **kwargs):
         self._record("update_user", id_=id_, **kwargs)
         return id_, "Existing Name"
