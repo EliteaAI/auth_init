@@ -271,7 +271,14 @@ class RPC:  # pylint: disable=R0903,E1101
         #
         # Ensure global_admin is set
         #
-        _, returning_name = auth_core.update_user(id_=user_id, last_login=datetime.now())
+        login_time = datetime.now()
+        # Must run before last_login is set: it only records users who never logged in
+        try:
+            auth_core.record_first_login(user_id, login_time)
+        except:  # pylint: disable=W0702
+            log.warning("Could not record first login for user %s", user_id, exc_info=True)
+        #
+        _, returning_name = auth_core.update_user(id_=user_id, last_login=login_time)
         if not returning_name or (idp_name_given and returning_name != user_name):
             auth_core.update_user(id_=user_id, name=user_name)
             if returning_name:
