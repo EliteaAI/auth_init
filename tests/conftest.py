@@ -66,8 +66,8 @@ class AuthCore:
         self._record("get_user_from_provider", provider_id)
         return {"id": self.user_id}
 
-    def add_user(self, email, name=None):
-        self._record("add_user", email, name)
+    def add_user(self, email, name=None, audit_ctx=None):
+        self._record("add_user", email, name, audit_ctx=audit_ctx)
         return self.user_id
 
     def add_user_provider(self, user_id, provider_id):
@@ -80,8 +80,8 @@ class AuthCore:
         self._record("ensure_system_token", user_id)
         return "encoded-token"
 
-    def record_first_login(self, user_id, when):
-        self._record("record_first_login", user_id, when)
+    def record_first_login(self, user_id, when, audit_ctx=None):
+        self._record("record_first_login", user_id, when, audit_ctx=audit_ctx)
         return True
 
     def update_user(self, id_=None, **kwargs):
@@ -100,7 +100,8 @@ class AuthCore:
             raise LookupError(provider_ref)
         return {"id": provider_user_id}
 
-    def assign_user_to_role(self, user_id, role):
+    def assign_user_to_role(self, user_id, role, audit_ctx=None):
+        self.audit_ctx_of_assign = audit_ctx
         self._record("assign_user_to_role", user_id, role)
 
 

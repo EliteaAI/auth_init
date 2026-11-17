@@ -62,9 +62,13 @@ class Module(module.ModuleModel):
             system_user_id = None
         #
         if system_user_id is None:
-            system_user_id = auth_core.add_user(system_user, system_user)
+            bootstrap_ctx = {
+                "actor_type": "system", "actor_id": None, "actor_name": "System bootstrap",
+                "actor_email": None, "source": "system", "request_id": None,
+            }
+            system_user_id = auth_core.add_user(system_user, system_user, audit_ctx=bootstrap_ctx)
             auth_core.add_user_group(system_user_id, 1)
-            auth_core.assign_user_to_role(system_user_id, global_admin_role)
+            auth_core.assign_user_to_role(system_user_id, global_admin_role, audit_ctx=bootstrap_ctx)
 
     def deinit(self):
         """ De-init module """
