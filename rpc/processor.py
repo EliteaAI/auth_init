@@ -32,6 +32,18 @@ IDENTITY_KEYS = ("email", "idp_subject")
 SUBJECT_FIELDS = ("idp_issuer", "idp_tid", "idp_oid")
 
 
+def _login_audit_ctx(auth_ctx):
+    """ Audit actor for changes a sign-in makes (#7504): System, labelled with the provider """
+    return {
+        "actor_type": "system",
+        "actor_id": None,
+        "actor_name": f"IdP sign-in ({auth_ctx.get('provider') or 'unknown'})",
+        "actor_email": None,
+        "source": "provisioning",
+        "request_id": None,
+    }
+
+
 def _identity_subject(auth_ctx):
     """ (issuer, tid, oid) the provider vouched for; None if it supplied no identity
 
@@ -127,7 +139,7 @@ def _resolve_by_idp_subject(auth_ctx, subject, user_email, user_name, user_provi
         if auth_ctx["user_id"] is None:
             auth_core.add_user_provider(user_id, user_provider_id)
     else:
-        user_id = auth_core.add_user(user_email, user_name)
+        user_id = auth_core.add_user(user_email, user_name, audit_ctx=_login_audit_ctx(auth_ctx))
         auth_core.add_user_provider(user_id, user_provider_id)
         auth_core.add_user_group(user_id, 1)
         auth_core.set_user_idp_subject(user_id, issuer, tid, oid)
@@ -152,7 +164,7 @@ def _ensure_user_provider(user_id, provider_ref):
         )
 
 
-def _sync_user_email(user_id, user_email):
+def _sync_user_email(user_id, user_email, audit_ctx):
     stored_email = auth_core.get_user(user_id=user_id)["email"]
     if stored_email == user_email:
         return
@@ -169,7 +181,7 @@ def _sync_user_email(user_id, user_email):
         )
         return
     #
-    auth_core.update_user(id_=user_id, email=user_email)
+    auth_core.update_user(id_=user_id, email=user_email, audit_ctx=audit_ctx)
     log.info("Email of user %s changed: %s -> %s", user_id, stored_email, user_email)
 
 
@@ -179,6 +191,7 @@ class RPC:  # pylint: disable=R0903,E1101
     @rpc_tools.wrap_exceptions(RuntimeError)
     def init_auth_processor(self, auth_ctx):
         user_provider_id = auth_ctx["provider_attr"]["nameid"]
+        audit_ctx = _login_audit_ctx(auth_ctx)
         # A login may only name the user its own provider reference maps to. The provider
         # hands over a fresh context, so a pre-set user id that this reference does not map
         # to is a stale or foreign session: deny instead of attaching the identity to it.
@@ -230,7 +243,7 @@ class RPC:  # pylint: disable=R0903,E1101
                 log.exception("No users with same email, creating new one")
             #
             if user_id is None:
-                user_id = auth_core.add_user(user_email, user_name)
+                user_id = auth_core.add_user(user_email, user_name, audit_ctx=audit_ctx)
                 #
                 auth_core.add_user_provider(user_id, user_provider_id)
                 auth_core.add_user_group(user_id, 1)
@@ -250,7 +263,7 @@ class RPC:  # pylint: disable=R0903,E1101
                     _ensure_user_provider(user_id, provider_ref)
             #
             if attributes.get("email"):
-                _sync_user_email(user_id, user_email)
+                _sync_user_email(user_id, user_email, audit_ctx)
         except:  # pylint: disable=W0702
             log.warning("Could not sync identity for user %s", user_id, exc_info=True)
         #
@@ -274,13 +287,13 @@ class RPC:  # pylint: disable=R0903,E1101
         login_time = datetime.now()
         # Must run before last_login is set: it only records users who never logged in
         try:
-            auth_core.record_first_login(user_id, login_time)
+            auth_core.record_first_login(user_id, login_time, audit_ctx=audit_ctx)
         except:  # pylint: disable=W0702
             log.warning("Could not record first login for user %s", user_id, exc_info=True)
         #
         _, returning_name = auth_core.update_user(id_=user_id, last_login=login_time)
         if not returning_name or (idp_name_given and returning_name != user_name):
-            auth_core.update_user(id_=user_id, name=user_name)
+            auth_core.update_user(id_=user_id, name=user_name, audit_ctx=audit_ctx)
             if returning_name:
                 log.info("Name of user %s changed: %s -> %s", user_id, returning_name, user_name)
         #
@@ -293,7 +306,7 @@ class RPC:  # pylint: disable=R0903,E1101
             log.info("User roles: %s", global_user_roles)
             #
             if not global_user_roles:
-                auth_core.assign_user_to_role(user_id, global_admin_role)
+                auth_core.assign_user_to_role(user_id, global_admin_role, audit_ctx=audit_ctx)
                 log.info("Added role for %s: %s", user_id, global_admin_role)
         #
         return auth_ctx

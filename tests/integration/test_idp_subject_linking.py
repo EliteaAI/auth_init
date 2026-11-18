@@ -70,7 +70,7 @@ class Directory:
         self.users[user_id].update(idp_issuer=issuer, idp_tid=tid, idp_oid=oid)
         return True
 
-    def add_user(self, email, name=None):
+    def add_user(self, email, name=None, audit_ctx=None):  # pylint: disable=W0613
         self.calls.append(("add_user", email, name))
         self.next_id += 1
         self.seed(self.next_id, email)
